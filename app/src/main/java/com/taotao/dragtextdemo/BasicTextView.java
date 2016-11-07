@@ -4,22 +4,20 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.text.Layout;
 import android.text.TextPaint;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.MotionEvent;
-import android.view.ViewParent;
 import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.ListIterator;
 
 /**
  * Created by taotao on 16/11/3.
@@ -32,9 +30,14 @@ public class BasicTextView extends TextView{
     private List<String> inputTextList;
     List<List<Rect>> itemBoundList;
 
-    private Paint rectPaint;
+    private Paint rectPaint, blankPaint, cursorPaint;
 
     private float downX, downY;
+
+    private int insertIndex = -1;
+    private int dragIndex = -1;
+    private String dragText;
+    private List<Rect> dragBounds;
 
     public BasicTextView(Context context) {
         this(context, null);
@@ -43,9 +46,18 @@ public class BasicTextView extends TextView{
     public BasicTextView(Context context, AttributeSet attrs) {
         super(context, attrs);
         rectPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        rectPaint.setColor(Color.GREEN);
-        rectPaint.setStyle(Paint.Style.STROKE);
-        rectPaint.setStrokeWidth(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2, getResources().getDisplayMetrics()));
+        rectPaint.setColor(0x50888888);
+        rectPaint.setStyle(Paint.Style.FILL);
+//        rectPaint.setStrokeWidth(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2, getResources().getDisplayMetrics()));
+
+        blankPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        blankPaint.setColor(Color.WHITE);
+        blankPaint.setStyle(Paint.Style.FILL);
+
+        cursorPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        cursorPaint.setColor(Color.BLUE);
+        cursorPaint.setStrokeWidth(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 2, getResources().getDisplayMetrics()));
+
     }
     
     public void setInputText(String inputText){
@@ -58,11 +70,12 @@ public class BasicTextView extends TextView{
         
         setText(stringBuffer);
 
+
         postDelayed(new Runnable() {
             @Override
             public void run() {
                 calculateItemBounds(0);
-                postInvalidate();
+                invalidate();
             }
         }, 100);
     }
@@ -93,6 +106,7 @@ public class BasicTextView extends TextView{
         int lineHeight = getLineHeight();
 
         boolean isChain = false;//跨行
+
 
         for(int i = 0; i < layout.getLineCount(); i++){
             int lineStart = layout.getLineStart(i);
@@ -158,6 +172,7 @@ public class BasicTextView extends TextView{
 
     }
 
+
     private Rect getItemBound(String item, int offsetX, int offsetY, TextPaint textPaint){
         Rect rect = new Rect();
         float width = textPaint.measureText(item);
@@ -168,57 +183,97 @@ public class BasicTextView extends TextView{
     }
 
 
+
+
     @Override
     protected void onDraw(Canvas canvas) {
+
+        //draw background frame
         if(itemBoundList != null){
+            TextPaint textPaint = getPaint();
+            int offsetY = getLineHeight() - Util.getTextHeight(textPaint);
+            int spaceWith = (int) textPaint.measureText(" ", 0, 1);
             for(List<Rect> rectList : itemBoundList){
-                ListIterator<Rect> iterator = rectList.listIterator();
-                while (iterator.hasNext()){
-                    Rect rect = iterator.next();
-                    if(iterator.hasNext()){
-                        Path path = new Path();
-                        path.moveTo(rect.right, rect.top);
-                        path.lineTo(rect.left, rect.top);
-                        path.lineTo(rect.left, rect.bottom);
-                        path.lineTo(rect.right, rect.bottom);
-                        canvas.drawPath(path, rectPaint);
-                    }else{
-                        canvas.drawRect(rect, rectPaint);
+
+                if(rectList.size() == 1){
+                    Rect rect = rectList.get(0);
+                    RectF rectF = new RectF(rect.left, rect.top + offsetY, rect.right - spaceWith, rect.bottom);
+                    int r = (int) (rectF.height()*0.4f);
+                    canvas.drawRoundRect(rectF, r, r, rectPaint);
+
+                }else{
+                    for(int i = 0; i < rectList.size(); i++){
+                        Rect rect = rectList.get(i);
+                        RectF rectF = new RectF(rect.left, rect.top + offsetY, rect.right - spaceWith, rect.bottom);
+                        int r = (int) (rectF.height()*0.4f);
+                        if(i == 0){
+                            canvas.drawPath(Util.createRoundRect(rectF, r, 0, 0, r), rectPaint);
+                        }else if(i == rectList.size() - 1){
+                            canvas.drawPath(Util.createRoundRect(rectF, 0, r, r, 0), rectPaint);
+                        }else{
+                            canvas.drawRect(rectF, rectPaint);
+                        }
                     }
+
                 }
+
             }
         }
-        super.onDraw(canvas);
-    }
 
+        //draw insert cursor
+        if(insertIndex != -1 && dragIndex != -1){
+            TextPaint textPaint = getPaint();
+            int offset = (int) textPaint.measureText(" ", 0, 1)/2;
+            Rect rect = itemBoundList.get(insertIndex).get(0);
+            if(insertIndex > dragIndex){
+                canvas.drawLine(rect.right + offset, rect.top, rect.right + offset, rect.bottom , cursorPaint);
+            }else{
+                canvas.drawLine(rect.left - offset, rect.top, rect.left - offset, rect.bottom , cursorPaint);
+            }
+
+        }
+
+        //draw text
+        super.onDraw(canvas);
+
+        //draw blank
+        if(dragBounds != null){
+            for(Rect rect : dragBounds){
+                canvas.drawRect(rect, blankPaint);
+            }
+        }
+
+    }
 
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
 //        Log.d(TAG, "onTouchEvent() called with: event = [" + event.getAction() + "]");
         int action = event.getAction();
-        if(action == MotionEvent.ACTION_DOWN){
-            reset();
-            downX = event.getX();
-            downY = event.getY();
-            Log.d(TAG, "DOWN : " + downX + ":" + downY);
+
+        switch (action){
+            case MotionEvent.ACTION_DOWN:
+                downX = event.getX();
+                downY = event.getY();
+                Log.d(TAG, "DOWN : " + downX + ":" + downY);
+
+                break;
+
         }
         return super.onTouchEvent(event);
     }
 
-    private int dragIndex = -1;
+
+
     public int startDragText(){
         for(int i = 0; i < itemBoundList.size(); i++){
             List<Rect> rectList = itemBoundList.get(i);
             for (Rect rect : rectList){
                 if(rect.contains((int) downX, (int) downY)){
-                    String dragText = inputTextList.get(i);
+                    dragText = inputTextList.get(i);
                     dragIndex = i;
+                    dragBounds = rectList;
                     Log.i(TAG, "dragText = " + dragText + "  index = " + dragIndex);
-                    ViewParent parent;
-                    if(dragIndex != -1 && (parent = getParent()) instanceof DragTextLayout){
-                        ((DragTextLayout)parent).dragText(rectList, dragText);
-                    }
                     return dragIndex;
                 }
             }
@@ -231,10 +286,14 @@ public class BasicTextView extends TextView{
         Log.d(TAG, "changeItemTextPosition() called with: index = [" + index + "]" + " dragIndex = " + dragIndex);
 
         if(index == dragIndex){
+            invalidate();
             return;
         }
 
-        moveListItem(inputTextList, dragIndex, index);
+        //index 已作补偿
+        String t = inputTextList.remove(dragIndex);
+        inputTextList.add(index, t);
+
 
         StringBuffer stringBuffer = new StringBuffer(inputTextList.size() + 1);
         for(String item : inputTextList){
@@ -247,27 +306,33 @@ public class BasicTextView extends TextView{
 
     }
 
+    /**
+     *
+     * @param x
+     * @param y
+     * @return 返回的index已经是补偿过了,所以后面插入位置计算直接用就可以了
+     */
     public int findInsertPosition(float x, float y){
-        int insertIndex = -1;
-        float dis = 0;
-        int nearestIndex;
-
         for (int i = 0; i < itemBoundList.size(); i++){
             List<Rect> rectList = itemBoundList.get(i);
             for(Rect rect : rectList){
-                float disX = x - rect.centerX();
-                float disY = y - rect.centerY();
-//                disX*disX + disY*disY;
                 if(rect.contains((int) x, (int) y)){
-                    if(x > rect.centerX()){//判断插入左右位置
-                        insertIndex = i + 1;
-                        if(insertIndex >= itemBoundList.size()){
+                    if(i < dragIndex){
+                        if(x > rect.centerX()){//判断插入左右位置
+                            insertIndex = i + 1;
+                        }else{
                             insertIndex = i;
+                        }
+                    }else if(i > dragIndex){
+                        if(x > rect.centerX()){//判断插入左右位置
+                            insertIndex = i;
+                        }else{
+                            insertIndex = i - 1;
                         }
                     }else{
                         insertIndex = i;
                     }
-                    Log.i(TAG, "insert index = " + insertIndex);
+                    Log.i(TAG, "insert index = " + insertIndex + "  drag index = " + dragIndex);
                     return insertIndex;
                 }
             }
@@ -278,9 +343,15 @@ public class BasicTextView extends TextView{
     }
 
 
-
     public void reset(){
+        insertIndex = -1;
         dragIndex = -1;
+        dragBounds = null;
+        dragText = null;
+    }
+
+    public void resetInsertIndex() {
+        this.insertIndex = -1;
     }
 
     public List<List<Rect>> getItemBoundList() {
@@ -291,14 +362,15 @@ public class BasicTextView extends TextView{
         return inputTextList;
     }
 
+    public int getDragIndex() {
+        return dragIndex;
+    }
 
-    public <T> List<T> moveListItem(List<T> list, int fromIndex, int toIndex){
-        if(fromIndex == toIndex) return list;
-        T t = list.remove(fromIndex);
-        if(fromIndex < toIndex){
-            toIndex ++;
-        }
-        list.add(toIndex, t);
-        return list;
+    public String getDragText() {
+        return dragText;
+    }
+
+    public List<Rect> getDragBounds() {
+        return dragBounds;
     }
 }

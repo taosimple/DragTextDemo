@@ -9,13 +9,11 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 
-import java.util.List;
-
 /**
  * Created by taotao on 16/11/3.
  */
 
-public class DragTextLayout extends FrameLayout implements DragAble{
+public class DragTextLayout extends FrameLayout {
 
     final String TAG = "DragTextLayout";
 
@@ -32,6 +30,7 @@ public class DragTextLayout extends FrameLayout implements DragAble{
     private MaskTextView maskTextView;
 
     private int settleIndex = -1;
+    private boolean isStartDrag;
 
     private ViewDragHelper dragHelper ;
 
@@ -46,6 +45,7 @@ public class DragTextLayout extends FrameLayout implements DragAble{
             public boolean tryCaptureView(View child, int pointerId) {
 //                Log.d(TAG, "tryCaptureView() called with: child = [" + child + "], pointerId = [" + pointerId + "]");
                 if(child.equals(maskTextView)){
+                    isStartDrag = false;
                     return (basicTextView.startDragText() != -1);
                 }
                 return false;
@@ -74,20 +74,36 @@ public class DragTextLayout extends FrameLayout implements DragAble{
             public void onViewPositionChanged(View changedView, int left, int top, int dx, int dy) {
 //                Log.d(TAG, "onViewPositionChanged() called with: left = [" + left + "], top = [" + top + "], dx = [" + dx + "], dy = [" + dy + "]");
                 super.onViewPositionChanged(changedView, left, top, dx, dy);
+                if(!isStartDrag){
+                    isStartDrag = true;
+                    maskTextView.dragText(basicTextView.getDragBounds(), basicTextView.getDragText());
+                    basicTextView.invalidate();
+                }
+
+                if(dragHelper.getViewDragState() == ViewDragHelper.STATE_DRAGGING){
+                    int index = basicTextView.findInsertPosition(touchX, touchY);
+                    if(index != settleIndex){
+                        basicTextView.invalidate();
+                    }
+                    settleIndex = index;
+                }
             }
 
             @Override
             public void onViewReleased(View releasedChild, float xvel, float yvel) {
                 Log.d(TAG, "onViewReleased() called with:  XY = [" + releasedChild.getX() + ":" + releasedChild.getY() + "], TranslationXY = [" + releasedChild.getTranslationX() + ":" + releasedChild.getTranslationY() + "], posXY = [" + releasedChild.getLeft() + ":" + releasedChild.getTop() + "]" + "], scrollXY = [" + releasedChild.getScrollX() + ":" + releasedChild.getScrollY() + "]");
                 super.onViewReleased(releasedChild, xvel, yvel);
-                settleIndex = basicTextView.findInsertPosition(upX, upY);
+                if(!isStartDrag) return;
 
-//                releasedChild.setTranslationX(-releasedChild.getLeft());
-//                releasedChild.setTranslationY(-releasedChild.getTop());
+                settleIndex = basicTextView.findInsertPosition(touchX, touchY);
 
+                basicTextView.resetInsertIndex();
+
+                basicTextView.changeItemTextPosition(settleIndex);
                 Rect dstRect = basicTextView.getItemBoundList().get(settleIndex).get(0);
                 Rect startRect = maskTextView.getDragTextBounds().get(0);
 
+                basicTextView.reset();
                 dragHelper.settleCapturedViewAt(dstRect.left - startRect.left, dstRect.top - startRect.top);
                 invalidate();
             }
@@ -112,14 +128,7 @@ public class DragTextLayout extends FrameLayout implements DragAble{
                 removeView(maskTextView);
                 maskTextView.clearText();
                 addView(maskTextView, LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
-                basicTextView.changeItemTextPosition(settleIndex);
                 settleIndex = -1;
-//                dragHelper.settleCapturedViewAt(0, 0);
-//                maskTextView.setX(0);
-//                maskTextView.setY(0);
-//                ViewCompat.setX(maskTextView, 0);
-//                ViewCompat.setY(maskTextView, 0);
-//                maskTextView.scrollTo(-maskTextView.getScrollX(), -maskTextView.getScrollY());
             }
 
         }
@@ -132,23 +141,15 @@ public class DragTextLayout extends FrameLayout implements DragAble{
         return ret;
     }
 
-    private float upX, upY;
+    private float touchX, touchY;
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getAction();
-        float X = event.getX();
-        float Y = event.getY();
-//        Log.d(TAG, "onTouchEvent() called with: event = [" + action + "-" + X + ":" + Y + "]");
+        touchX = event.getX();
+        touchY = event.getY();
+//        Log.d(TAG, "onTouchEvent() called with: event = [" + action + "-" + touchX + ":" + touchY + "]");
 
-        if(action == MotionEvent.ACTION_UP){
-            upX = X;
-            upY = Y;
-        }
-
-        if(dragHelper.getViewDragState() == ViewDragHelper.STATE_DRAGGING){
-
-        }
         dragHelper.processTouchEvent(event);
 
         return true;
@@ -172,13 +173,6 @@ public class DragTextLayout extends FrameLayout implements DragAble{
     public void setTextSize(int unit, float size) {
         basicTextView.setTextSize(unit, size);
         maskTextView.setTextSize(unit, size);
-    }
-
-
-
-    @Override
-    public void dragText(List<Rect> rectList, String dragText){
-        maskTextView.dragText(rectList, dragText);
     }
 
 

@@ -2,9 +2,9 @@ package com.taotao.dragtextdemo;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.text.TextPaint;
 import android.util.AttributeSet;
 import android.util.Log;
@@ -17,7 +17,7 @@ import java.util.List;
  * Created by taotao on 16/11/3.
  */
 
-public class MaskTextView extends TextView implements DragAble{
+public class MaskTextView extends TextView {
 
     private final String TAG = "MaskTextView";
 
@@ -36,8 +36,8 @@ public class MaskTextView extends TextView implements DragAble{
     private void init(){
 //        setBackgroundColor(0x50FFFF00);
         rectPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        rectPaint.setColor(Color.GREEN);
-        rectPaint.setStyle(Paint.Style.STROKE);
+        rectPaint.setColor(0x50888888);
+        rectPaint.setStyle(Paint.Style.FILL);
     }
 
     @Override
@@ -49,7 +49,7 @@ public class MaskTextView extends TextView implements DragAble{
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-//        Log.d(TAG, "onDraw() called with: showDragText = [" + showDragText + "]");
+        Log.d(TAG, "onDraw() called with: showDragText = [" + showDragText + "]");
         if(showDragText){
             showDragText(canvas);
             showDragText = false;
@@ -58,6 +58,8 @@ public class MaskTextView extends TextView implements DragAble{
 
     private void showDragText(Canvas canvas){
         TextPaint textPaint = getPaint();
+        int offsetY = getLineHeight() - Util.getTextHeight(textPaint);
+        int spaceWith = (int) textPaint.measureText(" ", 0, 1);
 
         if(dragTextBounds.size() > 1){
             for(Rect rect : dragTextBounds){
@@ -70,6 +72,10 @@ public class MaskTextView extends TextView implements DragAble{
         }else{
             Rect origin = dragTextBounds.get(0);
             canvas.drawText(dragText, origin.left, origin.bottom, textPaint);
+
+            RectF rectF = new RectF(origin.left, origin.top + offsetY, origin.right - spaceWith, origin.bottom);
+            int r = (int) (rectF.height()*0.4f);
+            canvas.drawRoundRect(rectF, r, r, rectPaint);
         }
 
     }
@@ -83,7 +89,6 @@ public class MaskTextView extends TextView implements DragAble{
     private String dragText;
     private boolean showDragText;
 
-    @Override
     public void dragText(List<Rect> rectList, String dragText){
         Log.d(TAG, "dragText");
         this.dragText = dragText;
